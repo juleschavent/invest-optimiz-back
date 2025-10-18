@@ -35,6 +35,32 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 The API will be available at `http://localhost:8000` with automatic API docs at `/docs`.
 
+### Code Quality Tools
+```bash
+# Format code (auto-fix style issues)
+ruff format app/
+
+# Fix indentation issues (for valid but poorly indented code)
+autopep8 --in-place --aggressive --aggressive app/
+
+# Lint code (check for errors, unused imports, etc.)
+ruff check app/
+
+# Auto-fix linting issues
+ruff check app/ --fix
+
+# Type check (enforce type hints)
+mypy app/
+```
+
+Configuration is in `pyproject.toml`. All functions must have type hints (enforced by mypy).
+
+**Formatter behavior:**
+- **Ruff** (primary formatter): Fast, handles valid Python code
+- **autopep8**: Fixes indentation issues in valid code (e.g., 5 spaces → 4 spaces)
+- Both run automatically on save in VS Code
+- **Important**: Neither can fix syntax errors (invalid indentation that breaks Python parsing)
+
 ## Architecture
 
 ### Current Structure
@@ -96,6 +122,27 @@ ANTHROPIC_API_KEY=your_api_key_here
 ```
 
 Load with `python-dotenv` in `app/main.py`.
+
+## VS Code Setup
+
+**Required Extensions:**
+- **Ruff** (charliermarsh.ruff) - Primary formatter and linter
+- **Python** (ms-python.python) - Python language support
+- **autopep8** (ms-python.autopep8) - Indentation fixes
+
+With these installed and the workspace settings in `.vscode/settings.json`, you get:
+- Auto-format on save (Ruff)
+- Auto-organize imports on save
+- Auto-fix linting issues on save
+- Auto-fix indentation in valid code (autopep8 with --aggressive)
+- Type checking in the editor
+
+**What auto-fixes on save:**
+- ✅ Import sorting and organization
+- ✅ Spacing, quotes, line length
+- ✅ Unused imports removal
+- ✅ Wrong indentation in valid code (5 spaces → 4 spaces)
+- ❌ Syntax errors (you must fix these manually first)
 
 ## Project Context
 
