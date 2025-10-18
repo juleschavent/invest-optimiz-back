@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.routes import test
+
 
 app = FastAPI(
     title="Bank Statement Analyzer API",
@@ -21,26 +23,5 @@ app.add_middleware(
 )
 
 
-@app.get("/")
-def read_root():
-    """Root endpoint - API health check"""
-    return {
-        "message": "Bank Statement Analyzer API is running!",
-        "version": "1.0.0",
-        "docs": "/docs"
-    }
 
-
-@app.get("/health")
-def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy"}
-
-
-@app.get("/api/test")
-def test_endpoint():
-    """Test endpoint to verify API is working"""
-    return {
-        "message": "API is working!",
-        "data": {"test": True}
-    }
+app.include_router(test.router)
