@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routes import test
+from app.routes import test, statements
 
 app = FastAPI(
     title="Bank Statement Analyzer API",
@@ -24,3 +24,4 @@ app.add_middleware(
 
 
 app.include_router(test.router)
+app.include_router(statements.router)
