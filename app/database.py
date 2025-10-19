@@ -13,20 +13,15 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
 # Get database URL from environment variable
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-if not DATABASE_URL:
-    raise ValueError(
-        "DATABASE_URL environment variable is not set. "
-        "Please create a .env file with DATABASE_URL."
-    )
+# Note: load_dotenv() must be called before importing this module
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 # Create async engine
-# echo=True logs all SQL statements (useful for learning, disable in production)
+# Will fail with clear error if DATABASE_URL is empty
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True,  # Set to False in production
-    future=True,  # Use SQLAlchemy 2.0 style
+    echo=True,
+    future=True,
 )
 
 # Create async session factory
