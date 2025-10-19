@@ -12,26 +12,35 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# Get database URL from environment variable
-# Note: load_dotenv() must be called before importing this module
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+engine = None
+AsyncSessionLocal = None
 
-# Create async engine
-# Will fail with clear error if DATABASE_URL is empty
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=True,
-    future=True,
-)
 
-# Create async session factory
-# expire_on_commit=False prevents objects from being expired after commit
-# This is important for async sessions to avoid extra queries
-AsyncSessionLocal = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+def init_db(database_url: str | None = None) -> None:
+    """Initialize database engine and session factory."""
+    global engine, AsyncSessionLocal
+
+    if database_url is None:
+        database_url = os.getenv("DATABASE_URL")
+
+    if not database_url:
+        raise ValueError("DATABASE_URL not set")
+
+    engine = create_async_engine(  # <-- Creates engine when called!
+        database_url,
+        echo=True,
+        future=True,
+    )
+
+    # Create async session factory
+    # expire_on_commit=False prevents objects from being expired after commit
+    # This is important for async sessions to avoid extra queries
+    AsyncSessionLocal = sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
 
 # Base class for all database models
 # All your models (Statement, Analysis) will inherit from this
@@ -50,6 +59,11 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
     The session is automatically closed after the request completes.
     """
+    if AsyncSessionLocal is None:
+        raise RuntimeError(
+            "Database not initialized. Call init_db() first."
+        )
+
     async with AsyncSessionLocal() as session:
         try:
             yield session

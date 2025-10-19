@@ -18,15 +18,18 @@ async def lifespan(app: FastAPI):
     Runs on startup and shutdown to manage resources.
     This is the modern way (replaces @app.on_event decorators).
     """
-    # Startup: Test database connection
+    # Startup: Initialize database
     print("🚀 Starting up...")
 
-    # Import here to ensure .env is loaded first
-    from app.database import engine
+    # Import database module (not the engine directly)
+    import app.database as db
+
+    # Initialize database (this creates the engine)
+    db.init_db()
 
     # Test database connection
     try:
-        async with engine.begin() as conn:
+        async with db.engine.begin() as conn:
             print("✅ Database connection successful!")
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
@@ -36,8 +39,9 @@ async def lifespan(app: FastAPI):
 
     # Shutdown: Close database connections
     print("👋 Shutting down...")
-    await engine.dispose()
-    print("✅ Database connections closed")
+    if db.engine:
+        await db.engine.dispose()
+        print("✅ Database connections closed")
 
 
 app = FastAPI(
@@ -63,3 +67,7 @@ app.add_middleware(
 
 app.include_router(test.router)
 app.include_router(statements.router)
+
+# Import db_test AFTER load_dotenv() has been called
+from app.routes import db_test
+app.include_router(db_test.router)
