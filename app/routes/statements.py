@@ -1,71 +1,174 @@
-"""
-Statement Routes
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-Handles HTTP endpoints for bank statement operations.
-"""
+from app.database import get_db
+from app.models import Analysis, Statement
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
-
-from app.schemas import StatementUploadResponse
-from app.services.pdf_parser import extract_text_from_pdf
-
-# Create a router - this groups related endpoints together
-# prefix="/statements" means all routes here start with /statements
-# tags=["statements"] groups them in the /docs interface
-router = APIRouter(prefix="/statements", tags=["statements"])
+router = APIRouter(prefix="/api", tags=["statements"])
 
 
-@router.post("/upload", response_model=StatementUploadResponse)
-async def upload_statement(
-    file: UploadFile = File(...),
-) -> StatementUploadResponse:
+@router.post("/create-test-statement")
+async def create_test_statement(db: AsyncSession = Depends(get_db)):
     """
-    Upload a bank statement PDF and extract its text content.
+    Creates a test statement in the database.
 
-    Args:
-        file: The PDF file to upload (FastAPI's UploadFile handles multipart/form-data)
-
-    Returns:
-        StatementUploadResponse with extracted text and metadata
-
-    How FastAPI handles file uploads:
-    1. UploadFile is a special type that represents an uploaded file
-    2. File(...) tells FastAPI this is required (the ... means "no default")
-    3. FastAPI automatically parses multipart/form-data requests
-    4. We can access file.filename, file.content_type, and file.read()
+    This demonstrates:
+    - Creating a model instance
+    - Adding it to the session
+    - Committing to save to database
+    - Returning the created object
     """
+    # Create a new Statement instance
+    statement = Statement(
+        filename="test_statement.pdf",
+        extracted_text="This is a test bank statement with sample transactions.",
+    )
 
-    # Validate file type - only accept PDFs
-    if file.content_type != "application/pdf":
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type: {file.content_type}. Only PDF files are allowed.",
-        )
+    # Add to session (stages the insert)
+    db.add(statement)
 
-    # Read the file content into memory as bytes
-    # await is needed because file.read() is async
-    file_bytes = await file.read()
+    # Commit happens automatically in get_db()
+    # But we need to refresh to get the auto-generated ID
+    await db.flush()  # Sends to DB but doesn't commit yet
+    await db.refresh(statement)  # Loads the ID back
 
-    # Check if file is empty
-    if len(file_bytes) == 0:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    return {
+        "message": "Test statement created!",
+        "id": statement.id,
+        "filename": statement.filename,
+        "uploaded_at": statement.uploaded_at.isoformat(),
+    }
 
-    try:
-        # Extract text using our PDF parser service
-        extracted_text = await extract_text_from_pdf(file_bytes)
 
-        # Count pages by splitting on page breaks (simple heuristic)
-        # A better approach would be to modify pdf_parser to return page count
-        page_count = extracted_text.count("\n\n") + 1
+@router.get("/statements")
+async def get_all_statements(db: AsyncSession = Depends(get_db)):
+    """
+    Retrieves all statements from the database.
 
-        # Return the response - FastAPI auto-converts to JSON using the schema
-        return StatementUploadResponse(
-            filename=file.filename or "unknown.pdf",
-            extracted_text=extracted_text,
-            page_count=page_count,
-            character_count=len(extracted_text),
-        )
+    This demonstrates:
+    - Building a SELECT query
+    - Executing it asynchronously
+    - Processing results
+    """
+    # Build query using SQLAlchemy 2.0 style
+    query = select(Statement).order_by(Statement.uploaded_at.desc())
 
-    except Exception as e:
-        # Catch any errors during PDF processing
-        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
+    # Execute query
+    result = await db.execute(query)
+
+    # Get all rows
+    statements = result.scalars().all()
+
+    return {
+        "count": len(statements),
+        "statements": [
+            {
+                "id": s.id,
+                "filename": s.filename,
+                "uploaded_at": s.uploaded_at.isoformat(),
+                "text_preview": s.extracted_text[:100] + "..."
+                if len(s.extracted_text) > 100
+                else s.extracted_text,
+            }
+            for s in statements
+        ],
+    }
+
+
+@router.get("/statements/{statement_id}")
+async def get_statement(statement_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Get a specific statement by ID with all its analyses.
+
+    This demonstrates:
+    - Querying by ID
+    - Accessing relationships (statement.analyses)
+    - Error handling (404 if not found)
+    """
+    # Query for statement
+    query = select(Statement).where(Statement.id == statement_id)
+    result = await db.execute(query)
+    statement = result.scalar_one_or_none()
+
+    if not statement:
+        raise HTTPException(status_code=404, detail="Statement not found")
+
+    return {
+        "id": statement.id,
+        "filename": statement.filename,
+        "extracted_text": statement.extracted_text,
+        "uploaded_at": statement.uploaded_at.isoformat(),
+        "analyses_count": len(statement.analyses),
+        "analyses": [
+            {
+                "id": a.id,
+                "created_at": a.created_at.isoformat(),
+                "prompt": a.prompt[:100] + "..." if len(a.prompt) > 100 else a.prompt,
+            }
+            for a in statement.analyses
+        ],
+    }
+
+
+@router.post("/statements/{statement_id}/analyses")
+async def create_analysis(statement_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Create a test analysis for a statement.
+
+    This demonstrates:
+    - Foreign key relationships
+    - Creating related objects
+    """
+    # Verify statement exists
+    query = select(Statement).where(Statement.id == statement_id)
+    result = await db.execute(query)
+    statement = result.scalar_one_or_none()
+
+    if not statement:
+        raise HTTPException(status_code=404, detail="Statement not found")
+
+    # Create analysis
+    analysis = Analysis(
+        statement_id=statement_id,
+        prompt="Analyze this test statement",
+        response="This is a test analysis. The spending pattern shows normal activity.",
+    )
+
+    db.add(analysis)
+    await db.flush()
+    await db.refresh(analysis)
+
+    return {
+        "message": "Analysis created!",
+        "id": analysis.id,
+        "statement_id": analysis.statement_id,
+        "created_at": analysis.created_at.isoformat(),
+    }
+
+
+@router.delete("/statements/{statement_id}")
+async def delete_statement(statement_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Delete a statement (and all its analyses via cascade).
+
+    This demonstrates:
+    - Delete operations
+    - Cascade delete behavior
+    """
+    query = select(Statement).where(Statement.id == statement_id)
+    result = await db.execute(query)
+    statement = result.scalar_one_or_none()
+
+    if not statement:
+        raise HTTPException(status_code=404, detail="Statement not found")
+
+    analyses_count = len(statement.analyses)
+
+    await db.delete(statement)
+    # Commit happens automatically
+
+    return {
+        "message": "Statement deleted",
+        "deleted_analyses": analyses_count,
+    }

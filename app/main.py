@@ -69,5 +69,6 @@ app.include_router(test.router)
 app.include_router(statements.router)
 
 # Import db_test AFTER load_dotenv() has been called
-from app.routes import db_test
-app.include_router(db_test.router)
+from app.routes import statements
+
+app.include_router(statements.router)
