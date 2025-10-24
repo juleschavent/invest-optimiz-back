@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +11,9 @@ router = APIRouter(prefix="/api", tags=["statements"])
 
 
 @router.post("/create-test-statement")
-async def create_test_statement(db: AsyncSession = Depends(get_db)):
+async def create_test_statement(
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
     """
     Creates a test statement in the database.
 
@@ -42,7 +46,7 @@ async def create_test_statement(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/statements")
-async def get_all_statements(db: AsyncSession = Depends(get_db)):
+async def get_all_statements(db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
     """
     Retrieves all statements from the database.
 
@@ -77,7 +81,9 @@ async def get_all_statements(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/statements/{statement_id}")
-async def get_statement(statement_id: int, db: AsyncSession = Depends(get_db)):
+async def get_statement(
+    statement_id: int, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
     """
     Get a specific statement by ID with all its analyses.
 
@@ -112,7 +118,9 @@ async def get_statement(statement_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/statements/{statement_id}/analyses")
-async def create_analysis(statement_id: int, db: AsyncSession = Depends(get_db)):
+async def create_analysis(
+    statement_id: int, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
     """
     Create a test analysis for a statement.
 
@@ -148,7 +156,9 @@ async def create_analysis(statement_id: int, db: AsyncSession = Depends(get_db))
 
 
 @router.delete("/statements/{statement_id}")
-async def delete_statement(statement_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_statement(
+    statement_id: int, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
     """
     Delete a statement (and all its analyses via cascade).
 

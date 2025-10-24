@@ -7,8 +7,8 @@ SQLAlchemy will create the actual PostgreSQL tables based on these definitions.
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import relationship
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -26,23 +26,27 @@ class Statement(Base):
     __tablename__ = "statements"
 
     # Primary key - auto-incrementing integer
-    id = Column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
 
     # Original filename of the uploaded PDF
-    filename = Column(String(255), nullable=False)
+    filename: Mapped[str] = mapped_column(String(255))
 
     # Extracted text from the PDF (can be very long)
     # Text type allows unlimited length (vs String which has a max)
-    extracted_text = Column(Text, nullable=False)
+    extracted_text: Mapped[str] = mapped_column(Text)
 
     # Timestamp when the statement was uploaded
-    # default=datetime.utcnow means it auto-fills with current time
-    uploaded_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # server_default uses database function for timezone-aware timestamps
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     # Relationship: One statement has many analyses
     # back_populates creates a two-way relationship
     # cascade="all, delete-orphan" means deleting a statement deletes its analyses
-    analyses = relationship("Analysis", back_populates="statement", cascade="all, delete-orphan")
+    analyses: Mapped[list["Analysis"]] = relationship(
+        back_populates="statement", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
         """String representation for debugging"""
@@ -62,24 +66,27 @@ class Analysis(Base):
     __tablename__ = "analyses"
 
     # Primary key
-    id = Column(Integer, primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
 
     # Foreign key linking to the statements table
     # ForeignKey creates the relationship at the database level
-    statement_id = Column(Integer, ForeignKey("statements.id"), nullable=False)
+    statement_id: Mapped[int] = mapped_column(ForeignKey("statements.id"))
 
     # The prompt/question sent to Claude AI
-    prompt = Column(Text, nullable=False)
+    prompt: Mapped[str] = mapped_column(Text)
 
     # Claude's analysis response (can be very long)
-    response = Column(Text, nullable=False)
+    response: Mapped[str] = mapped_column(Text)
 
     # When this analysis was created
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    # server_default uses database function for timezone-aware timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
     # Relationship: Each analysis belongs to one statement
     # back_populates links to Statement.analyses
-    statement = relationship("Statement", back_populates="analyses")
+    statement: Mapped["Statement"] = relationship(back_populates="analyses")
 
     def __repr__(self) -> str:
         """String representation for debugging"""

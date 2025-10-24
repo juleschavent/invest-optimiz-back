@@ -1,17 +1,26 @@
-from dotenv import load_dotenv
+from collections.abc import AsyncGenerator
+
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
-from app.routes import statements, test
+from app.config import get_settings
+from app.exception_handlers import app_exception_handler, generic_exception_handler
+from app.exceptions import AppException
+from app.logger import get_logger, setup_logging
+from app.routes import statements
 
-# Load environment variables from .env file
-# This must happen BEFORE importing database.py (which reads DATABASE_URL)
-load_dotenv()
+# Get settings (this will load from .env automatically via pydantic-settings)
+settings = get_settings()
+
+# Setup logging
+setup_logging()
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     Lifespan event handler for FastAPI app.
 
@@ -19,56 +28,56 @@ async def lifespan(app: FastAPI):
     This is the modern way (replaces @app.on_event decorators).
     """
     # Startup: Initialize database
-    print("🚀 Starting up...")
+    logger.info("Starting up application...")
 
     # Import database module (not the engine directly)
     import app.database as db
 
     # Initialize database (this creates the engine)
     db.init_db()
+    logger.info("Database engine initialized")
 
     # Test database connection
     try:
+        if db.engine is None:
+            raise RuntimeError("Database engine not initialized")
         async with db.engine.begin() as conn:
-            print("✅ Database connection successful!")
+            # Execute a simple query to verify the connection works
+            result = await conn.execute(text("SELECT 1"))
+            result.close()
+            logger.info("Database connection test successful")
     except Exception as e:
-        print(f"❌ Database connection failed: {e}")
+        logger.error(f"Database connection failed: {e}", exc_info=True)
         raise
 
     yield  # Application runs here
 
     # Shutdown: Close database connections
-    print("👋 Shutting down...")
+    logger.info("Shutting down application...")
     if db.engine:
         await db.engine.dispose()
-        print("✅ Database connections closed")
+        logger.info("Database connections closed")
 
 
 app = FastAPI(
-    title="Bank Statement Analyzer API",
-    description="API for analyzing bank statements using Claude AI",
-    version="1.0.0",
+    title=settings.api_title,
+    description=settings.api_description,
+    version=settings.api_version,
     lifespan=lifespan,
 )
+
+# Register exception handlers
+app.add_exception_handler(AppException, app_exception_handler)
+app.add_exception_handler(Exception, generic_exception_handler)
 
 # Configure CORS to allow frontend to communicate with backend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite default port
-        "http://localhost:5174",
-        "http://localhost:5175",  # Our frontend is running on this
-    ],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],  # Allow all HTTP methods
     allow_headers=["*"],  # Allow all headers
 )
 
-
-app.include_router(test.router)
-app.include_router(statements.router)
-
-# Import db_test AFTER load_dotenv() has been called
-from app.routes import statements
 
 app.include_router(statements.router)
