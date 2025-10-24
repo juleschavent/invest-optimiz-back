@@ -5,7 +5,6 @@ These models define the structure of data going in/out of our API.
 They provide automatic validation and documentation.
 """
 
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
