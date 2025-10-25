@@ -44,6 +44,14 @@ class Statement(Base):
     # Stores list of dicts: [{date, description, debit, credit}, ...]
     transactions: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
 
+    # Metadata extracted from CSV header (all optional)
+    account_holder: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    account_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    balance: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    balance_date: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    period_start: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    period_end: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     # Timestamp when the statement was uploaded
     # server_default uses database function for timezone-aware timestamps
     uploaded_at: Mapped[datetime] = mapped_column(

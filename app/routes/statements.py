@@ -71,12 +71,21 @@ async def upload_statement(
         # Parse CSV file
         parsed_data = await parse_csv(file_bytes)
 
+        # Extract metadata
+        metadata = parsed_data["metadata"]
+
         # Create statement in database
         statement = Statement(
             filename=file.filename,
             file_type="csv",
             raw_data=parsed_data["raw_csv"],
             transactions=parsed_data["transactions"],
+            account_holder=metadata.get("account_holder"),
+            account_number=metadata.get("account_number"),
+            balance=metadata.get("balance"),
+            balance_date=metadata.get("balance_date"),
+            period_start=metadata.get("period_start"),
+            period_end=metadata.get("period_end"),
         )
 
         db.add(statement)
@@ -182,6 +191,12 @@ async def get_all_statements(db: AsyncSession = Depends(get_db)) -> dict[str, An
                 "file_type": s.file_type,
                 "uploaded_at": s.uploaded_at.isoformat(),
                 "transaction_count": len(s.transactions),
+                "account_holder": s.account_holder,
+                "account_number": s.account_number,
+                "balance": s.balance,
+                "balance_date": s.balance_date,
+                "period_start": s.period_start,
+                "period_end": s.period_end,
             }
             for s in statements
         ],
@@ -219,6 +234,12 @@ async def get_statement(
         "uploaded_at": statement.uploaded_at.isoformat(),
         "transaction_count": len(statement.transactions),
         "transactions": statement.transactions,
+        "account_holder": statement.account_holder,
+        "account_number": statement.account_number,
+        "balance": statement.balance,
+        "balance_date": statement.balance_date,
+        "period_start": statement.period_start,
+        "period_end": statement.period_end,
         "analyses_count": len(statement.analyses),
         "analyses": [
             {

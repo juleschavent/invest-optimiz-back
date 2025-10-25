@@ -104,19 +104,22 @@ def _extract_metadata(csv_content: str) -> dict[str, str]:
             metadata["account_holder"] = line.strip().replace(";", "").strip()
 
         # Account number
-        if "Compte" in line and "n°" in line:
-            # Extract number after "n°"
-            match = re.search(r"n°\s*(\d+)", line)
+        if "Compte" in line:
+            # Extract number after "n°" (flexible pattern to handle encoding issues)
+            match = re.search(r"n.?\s*(\d+)", line)
             if match:
                 metadata["account_number"] = match.group(1)
 
         # Balance
         if "Solde au" in line:
-            # Extract date and amount
-            match = re.search(r"Solde au (\d{2}/\d{2}/\d{4})\s*([\d\s,]+)\s*€", line)
+            # Extract date and amount (flexible € pattern to handle encoding issues)
+            match = re.search(r"Solde au (\d{2}/\d{2}/\d{4})\s*([\d\s,]+)", line)
             if match:
                 metadata["balance_date"] = match.group(1)
-                metadata["balance"] = match.group(2).replace(" ", "").strip()
+                # Remove all whitespace (including non-breaking spaces)
+                metadata["balance"] = (
+                    match.group(2).replace(" ", "").replace("\xa0", "").strip()
+                )
 
         # Date range
         if "Liste des opérations" in line and "entre le" in line:
