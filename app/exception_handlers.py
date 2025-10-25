@@ -10,9 +10,9 @@ from fastapi.responses import JSONResponse
 from app.exceptions import (
     AIServiceError,
     AppException,
+    CSVProcessingError,
     DatabaseError,
     NotFoundError,
-    PDFProcessingError,
     ValidationError,
 )
 from app.logger import get_logger
@@ -43,7 +43,7 @@ async def app_exception_handler(request: Request, exc: Exception) -> JSONRespons
         status_code = status.HTTP_404_NOT_FOUND
     elif isinstance(exc, ValidationError):
         status_code = status.HTTP_400_BAD_REQUEST
-    elif isinstance(exc, PDFProcessingError):
+    elif isinstance(exc, CSVProcessingError):
         status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
     elif isinstance(exc, DatabaseError):
         status_code = status.HTTP_500_INTERNAL_SERVER_ERROR

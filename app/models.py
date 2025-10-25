@@ -6,8 +6,9 @@ SQLAlchemy will create the actual PostgreSQL tables based on these definitions.
 """
 
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -19,7 +20,7 @@ class Statement(Base):
 
     Database table: 'statements'
 
-    Stores the extracted text from the PDF, not the PDF file itself.
+    Stores both the raw CSV content and parsed transaction data.
     One statement can have multiple analyses.
     """
 
@@ -28,12 +29,20 @@ class Statement(Base):
     # Primary key - auto-incrementing integer
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
 
-    # Original filename of the uploaded PDF
+    # Original filename of the uploaded file
     filename: Mapped[str] = mapped_column(String(255))
 
-    # Extracted text from the PDF (can be very long)
+    # File type (currently only 'csv')
+    file_type: Mapped[str] = mapped_column(String(10), default="csv")
+
+    # Raw CSV content (can be very long)
     # Text type allows unlimited length (vs String which has a max)
-    extracted_text: Mapped[str] = mapped_column(Text)
+    raw_data: Mapped[str] = mapped_column(Text)
+
+    # Parsed transactions as JSON array
+    # JSONB type in PostgreSQL allows efficient querying and indexing
+    # Stores list of dicts: [{date, description, debit, credit}, ...]
+    transactions: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
 
     # Timestamp when the statement was uploaded
     # server_default uses database function for timezone-aware timestamps

@@ -58,14 +58,15 @@ class NotFoundError(AppException):
     pass
 
 
-class PDFProcessingError(AppException):
+class CSVProcessingError(AppException):
     """
-    Raised when PDF parsing fails.
+    Raised when CSV parsing fails.
 
     Examples:
-    - Corrupted PDF
-    - Encrypted PDF
-    - No text content
+    - Invalid CSV format
+    - Missing required columns
+    - Corrupted file
+    - Empty file
     """
 
     pass

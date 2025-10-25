@@ -3,12 +3,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.exceptions import PDFProcessingError
+from app.exceptions import CSVProcessingError
 from app.logger import get_logger
 from app.models import Analysis, Statement
-from app.services.pdf_parser import extract_text_from_pdf
+from app.services.csv_parser import parse_csv
 
 logger = get_logger(__name__)
 router = APIRouter(prefix="/api", tags=["statements"])
@@ -19,40 +20,40 @@ async def upload_statement(
     file: UploadFile, db: AsyncSession = Depends(get_db)
 ) -> dict[str, Any]:
     """
-    Upload a PDF bank statement and extract its text.
+    Upload a CSV bank statement and parse its transactions.
 
     This endpoint:
-    - Accepts a PDF file upload
+    - Accepts a CSV file upload
     - Validates the file type
-    - Extracts text using pdfplumber
+    - Parses transactions and metadata
     - Saves the statement to the database
     - Returns the created statement details
 
     Args:
-        file: The PDF file to upload
+        file: The CSV file to upload
         db: Database session (injected)
 
     Returns:
-        Created statement with id, filename, and upload timestamp
+        Created statement with id, filename, transaction count, and sample data
 
     Raises:
-        HTTPException 400: If file is not a PDF
-        HTTPException 422: If PDF processing fails
+        HTTPException 400: If file is not a CSV
+        HTTPException 422: If CSV processing fails
     """
     # Validate file type
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
 
-    if not file.filename.lower().endswith(".pdf"):
+    if not file.filename.lower().endswith(".csv"):
         raise HTTPException(
             status_code=400,
-            detail="Invalid file type. Only PDF files are allowed.",
+            detail="Invalid file type. Only CSV files are allowed.",
         )
 
     # Also check content type if provided
-    if file.content_type and file.content_type != "application/pdf":
+    if file.content_type and file.content_type not in ["text/csv", "application/csv"]:
         logger.warning(
-            f"File {file.filename} has content_type {file.content_type}, expected application/pdf"
+            f"File {file.filename} has content_type {file.content_type}, expected text/csv"
         )
 
     logger.info(f"Processing uploaded file: {file.filename}")
@@ -67,13 +68,15 @@ async def upload_statement(
 
         logger.info(f"Read {file_size} bytes from {file.filename}")
 
-        # Extract text from PDF
-        extracted_text = await extract_text_from_pdf(file_bytes)
+        # Parse CSV file
+        parsed_data = await parse_csv(file_bytes)
 
         # Create statement in database
         statement = Statement(
             filename=file.filename,
-            extracted_text=extracted_text,
+            file_type="csv",
+            raw_data=parsed_data["raw_csv"],
+            transactions=parsed_data["transactions"],
         )
 
         db.add(statement)
@@ -81,7 +84,8 @@ async def upload_statement(
         await db.refresh(statement)
 
         logger.info(
-            f"Successfully created statement {statement.id} from {file.filename}"
+            f"Successfully created statement {statement.id} from {file.filename} "
+            f"with {len(parsed_data['transactions'])} transactions"
         )
 
         return {
@@ -89,14 +93,13 @@ async def upload_statement(
             "id": statement.id,
             "filename": statement.filename,
             "uploaded_at": statement.uploaded_at.isoformat(),
-            "text_length": len(extracted_text),
-            "text_preview": extracted_text[:200] + "..."
-            if len(extracted_text) > 200
-            else extracted_text,
+            "transaction_count": len(parsed_data["transactions"]),
+            "metadata": parsed_data["metadata"],
+            "transactions_preview": parsed_data["transactions"][:5],  # First 5
         }
 
-    except PDFProcessingError as e:
-        logger.error(f"PDF processing failed for {file.filename}: {e.message}")
+    except CSVProcessingError as e:
+        logger.error(f"CSV processing failed for {file.filename}: {e.message}")
         raise HTTPException(status_code=422, detail=e.message) from e
     except Exception as e:
         logger.error(
@@ -120,10 +123,19 @@ async def create_test_statement(
     - Committing to save to database
     - Returning the created object
     """
-    # Create a new Statement instance
+    # Create a new Statement instance with test CSV data
     statement = Statement(
-        filename="test_statement.pdf",
-        extracted_text="This is a test bank statement with sample transactions.",
+        filename="test_statement.csv",
+        file_type="csv",
+        raw_data="Date;Description;Debit;Credit\n01/01/2024;Test transaction;10.00;",
+        transactions=[
+            {
+                "date": "01/01/2024",
+                "description": "Test transaction",
+                "debit": 10.0,
+                "credit": None,
+            }
+        ],
     )
 
     # Add to session (stages the insert)
@@ -167,10 +179,9 @@ async def get_all_statements(db: AsyncSession = Depends(get_db)) -> dict[str, An
             {
                 "id": s.id,
                 "filename": s.filename,
+                "file_type": s.file_type,
                 "uploaded_at": s.uploaded_at.isoformat(),
-                "text_preview": s.extracted_text[:100] + "..."
-                if len(s.extracted_text) > 100
-                else s.extracted_text,
+                "transaction_count": len(s.transactions),
             }
             for s in statements
         ],
@@ -189,8 +200,12 @@ async def get_statement(
     - Accessing relationships (statement.analyses)
     - Error handling (404 if not found)
     """
-    # Query for statement
-    query = select(Statement).where(Statement.id == statement_id)
+    # Query for statement with eager loading of analyses
+    query = (
+        select(Statement)
+        .where(Statement.id == statement_id)
+        .options(selectinload(Statement.analyses))
+    )
     result = await db.execute(query)
     statement = result.scalar_one_or_none()
 
@@ -200,8 +215,10 @@ async def get_statement(
     return {
         "id": statement.id,
         "filename": statement.filename,
-        "extracted_text": statement.extracted_text,
+        "file_type": statement.file_type,
         "uploaded_at": statement.uploaded_at.isoformat(),
+        "transaction_count": len(statement.transactions),
+        "transactions": statement.transactions,
         "analyses_count": len(statement.analyses),
         "analyses": [
             {
@@ -263,7 +280,12 @@ async def delete_statement(
     - Delete operations
     - Cascade delete behavior
     """
-    query = select(Statement).where(Statement.id == statement_id)
+    # Query with eager loading to avoid lazy load issues
+    query = (
+        select(Statement)
+        .where(Statement.id == statement_id)
+        .options(selectinload(Statement.analyses))
+    )
     result = await db.execute(query)
     statement = result.scalar_one_or_none()
 
