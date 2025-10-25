@@ -1,13 +1,110 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.exceptions import PDFProcessingError
+from app.logger import get_logger
 from app.models import Analysis, Statement
+from app.services.pdf_parser import extract_text_from_pdf
 
+logger = get_logger(__name__)
 router = APIRouter(prefix="/api", tags=["statements"])
+
+
+@router.post("/statements")
+async def upload_statement(
+    file: UploadFile, db: AsyncSession = Depends(get_db)
+) -> dict[str, Any]:
+    """
+    Upload a PDF bank statement and extract its text.
+
+    This endpoint:
+    - Accepts a PDF file upload
+    - Validates the file type
+    - Extracts text using pdfplumber
+    - Saves the statement to the database
+    - Returns the created statement details
+
+    Args:
+        file: The PDF file to upload
+        db: Database session (injected)
+
+    Returns:
+        Created statement with id, filename, and upload timestamp
+
+    Raises:
+        HTTPException 400: If file is not a PDF
+        HTTPException 422: If PDF processing fails
+    """
+    # Validate file type
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Only PDF files are allowed.",
+        )
+
+    # Also check content type if provided
+    if file.content_type and file.content_type != "application/pdf":
+        logger.warning(
+            f"File {file.filename} has content_type {file.content_type}, expected application/pdf"
+        )
+
+    logger.info(f"Processing uploaded file: {file.filename}")
+
+    try:
+        # Read file bytes
+        file_bytes = await file.read()
+        file_size = len(file_bytes)
+
+        if file_size == 0:
+            raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+        logger.info(f"Read {file_size} bytes from {file.filename}")
+
+        # Extract text from PDF
+        extracted_text = await extract_text_from_pdf(file_bytes)
+
+        # Create statement in database
+        statement = Statement(
+            filename=file.filename,
+            extracted_text=extracted_text,
+        )
+
+        db.add(statement)
+        await db.flush()
+        await db.refresh(statement)
+
+        logger.info(
+            f"Successfully created statement {statement.id} from {file.filename}"
+        )
+
+        return {
+            "message": "Statement uploaded successfully",
+            "id": statement.id,
+            "filename": statement.filename,
+            "uploaded_at": statement.uploaded_at.isoformat(),
+            "text_length": len(extracted_text),
+            "text_preview": extracted_text[:200] + "..."
+            if len(extracted_text) > 200
+            else extracted_text,
+        }
+
+    except PDFProcessingError as e:
+        logger.error(f"PDF processing failed for {file.filename}: {e.message}")
+        raise HTTPException(status_code=422, detail=e.message) from e
+    except Exception as e:
+        logger.error(
+            f"Unexpected error processing {file.filename}: {str(e)}", exc_info=True
+        )
+        raise HTTPException(
+            status_code=500, detail="Internal server error processing file"
+        ) from e
 
 
 @router.post("/create-test-statement")
