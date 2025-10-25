@@ -190,6 +190,10 @@ def _parse_transactions(csv_content: str) -> list[dict[str, Any]]:
             }
         )
 
+    # Add sequential IDs to transactions (1-based indexing)
+    for idx, transaction in enumerate(transactions, start=1):
+        transaction["id"] = idx
+
     return transactions
 
 
